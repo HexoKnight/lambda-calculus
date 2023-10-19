@@ -1,0 +1,8 @@
+[package]
+name = "lambda-calculus"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+console = "0.15.7"
+itertools = "0.11.0"
