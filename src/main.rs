@@ -1,5 +1,5 @@
 use console::Term;
-use std::{rc::Rc, fmt::{Debug, Write, write}};
+use std::{rc::Rc, fmt::{Write, Display}};
 use itertools::Itertools;
 
 use LambdaExpressionParseError as LEPE;
@@ -29,7 +29,7 @@ impl LEPE {
         full
     }
 }
-impl Debug for LEPE {
+impl Display for LEPE {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_str(0))
     }
@@ -40,11 +40,27 @@ enum LambdaExpression {
     Application(Rc<LambdaExpression>, Rc<LambdaExpression>),
     Variable(char),
 }
-impl Debug for LambdaExpression {
+impl Display for LambdaExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Function(var, body) => write!(f, "(λ{var}.{body:?})"),
-            Self::Application(fun, app) => write!(f, "({fun:?} {app:?})"),
+            Self::Function(var, body) => {
+                write!(f, "λ{var}.{body}")
+            }
+            Self::Application(function, input) => {
+                let function_str = if matches!(function.as_ref(), Self::Function(_, _)) {
+                    format!("({function})")
+                }
+                else {
+                    function.to_string()
+                };
+                let input_str = if matches!(input.as_ref(), Self::Application(_, _)) {
+                    format!("({input})")
+                }
+                else {
+                    input.to_string()
+                };
+                write!(f, "{function_str} {input_str}")
+            }
             Self::Variable(chr) => f.write_char(*chr),
         }
     }
@@ -155,14 +171,14 @@ fn main() {
     let k = F('x', Rc::from(F('y', Rc::from(V('x')))));
     let s = F('x', Rc::from(F('y', Rc::from(F('z', Rc::from(A(Rc::from(A(Rc::from(V('x')), Rc::from(V('z')))), Rc::from(A(Rc::from(V('y')), Rc::from(V('z')))))))))));
     
-    println!("{:?}", k);
-    println!("{:?}", s);
+    println!("{}", k);
+    println!("{}", s);
 
-    loop {
-        let out: String = Term::stdout().read_line().unwrap_or_default();
+    let mut out: String;
+    while { out = Term::stdout().read_line().unwrap_or_default(); !out.is_empty() } {
         match LambdaExpression::parse(&out) {
-            Ok(expr) => println!("{expr:?}"),
-            Err(err) => println!("{err:?}"),
+            Ok(expr) => println!("{expr}"),
+            Err(err) => println!("{err}"),
         }
     }
 }
