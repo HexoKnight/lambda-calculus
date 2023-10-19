@@ -163,22 +163,27 @@ impl LambdaExpression {
 }
 
 fn main() {
-    println!("Hello, world!");
-
     use LambdaExpression::Function as F;
     use LambdaExpression::Application as A;
     use LambdaExpression::Variable as V;
     let k = F('x', Rc::from(F('y', Rc::from(V('x')))));
     let s = F('x', Rc::from(F('y', Rc::from(F('z', Rc::from(A(Rc::from(A(Rc::from(V('x')), Rc::from(V('z')))), Rc::from(A(Rc::from(V('y')), Rc::from(V('z')))))))))));
     
-    println!("{}", k);
-    println!("{}", s);
+    println!("K combinator: {}", k);
+    println!("S combinator: {}", s);
+
+    println!("Enter lambda expressions to parse (empty to stop):");
 
     let mut out: String;
-    while { out = Term::stdout().read_line().unwrap_or_default(); !out.is_empty() } {
+    while {
+        print!("> ");
+        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+        out = Term::stdout().read_line().unwrap_or_default();
+        !out.is_empty()
+    } {
         match LambdaExpression::parse(&out) {
             Ok(expr) => println!("{expr}"),
-            Err(err) => println!("{err}"),
+            Err(err) => println!("{}", err.to_str(2)), // 2 offset is from '> ' in input
         }
     }
 }
