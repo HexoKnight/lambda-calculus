@@ -1,8 +1,9 @@
 use console::Term;
-use std::{rc::Rc, fmt::{Write, Display}};
+use std::{fmt::{Write, Display}, collections::HashMap};
 use itertools::Itertools;
 
 use LambdaExpressionParseError as LEPE;
+#[derive(Debug)]
 struct LambdaExpressionParseError {
     pub description: &'static str,
     pub start_index: usize,
@@ -35,10 +36,16 @@ impl Display for LEPE {
     }
 }
 
+#[derive(Clone)]
 enum LambdaExpression {
-    Function(char, Rc<LambdaExpression>),
-    Application(Rc<LambdaExpression>, Rc<LambdaExpression>),
+    Function(char, Box<LambdaExpression>),
+    Application(Box<LambdaExpression>, Box<LambdaExpression>),
     Variable(char),
+}
+impl Default for LambdaExpression {
+    fn default() -> Self {
+        Self::Variable('\\') // shouldn't be constructable in normal means
+    }
 }
 impl Display for LambdaExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -47,18 +54,19 @@ impl Display for LambdaExpression {
                 write!(f, "λ{var}.{body}")
             }
             Self::Application(function, input) => {
-                let function_str = if matches!(function.as_ref(), Self::Function(_, _)) {
+                let function_str = if matches!(**function, Self::Function(_, _)) {
                     format!("({function})")
                 }
                 else {
                     function.to_string()
                 };
-                let input_str = if matches!(input.as_ref(), Self::Application(_, _)) {
+                let input_str = if matches!(**input, Self::Application(_, _)|Self::Function(_, _)) {
                     format!("({input})")
                 }
                 else {
                     input.to_string()
                 };
+
                 write!(f, "{function_str} {input_str}")
             }
             Self::Variable(chr) => f.write_char(*chr),
@@ -124,7 +132,7 @@ impl LambdaExpression {
             };
             return Ok(Self::Function(
                 var.1,
-                Rc::from(Self::parse_recursive(char_iter, Some(next_char))?)
+                Box::from(Self::parse_recursive(char_iter, Some(next_char))?)
             ))
         }
         
@@ -154,25 +162,91 @@ impl LambdaExpression {
         let mut previous_expr = Self::parse_unsanitised(first_expr.collect_vec())?;
         while let Some(next_expr) = applications.next() {
             previous_expr = Self::Application(
-                Rc::from(previous_expr),
-                Rc::from(Self::parse_unsanitised(next_expr.collect())?)
+                Box::from(previous_expr),
+                Box::from(Self::parse_unsanitised(next_expr.collect())?)
             );
         }
         Ok(previous_expr)
     }
+
+    // fn substitute(mut self: Box<Self>, mut replacements: HashMap<char, LambdaExpression>)
+    // -> (Box<Self>, HashMap<char, LambdaExpression>) {
+    //     match *self {
+            
+    //     }
+    // }
+
+    fn b_reduce(self, recursive: bool) -> (Self, bool) {
+        let (new_self, _, b_reduced) = Box::new(self).b_reduce_recursive(HashMap::new(), recursive, true, 0);
+        (*new_self, b_reduced)
+    }
+    fn b_reduce_recursive(mut self: Box<Self>, mut replacements: HashMap<char, LambdaExpression>, recursive: bool, b_reduce: bool, depth: u32)
+    -> (Box<Self>, HashMap<char, LambdaExpression>, bool) {
+        // #[cfg(debug_assertions)]
+        // if !matches!(*self, Self::Variable(_)) {
+        //     println!("{depth}: {self}");
+        // }
+        match *self {
+            Self::Function(var, mut body) => {
+                let prev = replacements.remove(&var);
+                let b_reduced;
+                (body, replacements, b_reduced) = body.b_reduce_recursive(replacements, recursive, b_reduce, depth + 1);
+                if let Some(prev_expr) = prev {
+                    replacements.insert(var, prev_expr);
+                }
+                (Box::from(Self::Function(var, body)), replacements, b_reduced)
+            }
+            Self::Application(mut function, mut input) => {
+                if recursive {
+                    (function, replacements, _) = function.b_reduce_recursive(replacements, recursive, b_reduce, depth + 1);
+                }
+                match *function {
+                    Self::Function(var, mut body) => {
+                        (input, replacements, _) = input.b_reduce_recursive(replacements, recursive, false, depth + 1); // do not b_reduce right to avoid loop
+
+                        if b_reduce {
+                            let prev = replacements.insert(var, *input);
+                            (body, replacements, _) = body.b_reduce_recursive(replacements, recursive, b_reduce, depth + 1);
+                            if let Some(prev_var) = prev {
+                                replacements.insert(var, prev_var);
+                            } else {
+                                replacements.remove(&var);
+                            }
+                            (body, replacements, true)
+                        } else {
+                            (Box::from(Self::Function(var, body)), replacements, false)
+                        }
+                    }
+                    _ => {
+                        let mut b_reduced = false;
+                        if !recursive {
+                            (function, replacements, b_reduced) = function.b_reduce_recursive(replacements, recursive, b_reduce, depth + 1);
+                            if !b_reduced {
+                                (input, replacements, b_reduced) = input.b_reduce_recursive(replacements, recursive, b_reduce, depth + 1);
+                            }
+                        }
+                        (Box::from(Self::Application(function, input)), replacements, b_reduced)
+                    }
+                }
+            }
+            Self::Variable(c) => {
+                if let Some(expr) = replacements.get(&c) {
+                    self = Box::from(expr.clone());
+                }
+                (self, replacements, false)
+            }
+        }
+    }
 }
 
 fn main() {
-    use LambdaExpression::Function as F;
-    use LambdaExpression::Application as A;
-    use LambdaExpression::Variable as V;
-    let k = F('x', Rc::from(F('y', Rc::from(V('x')))));
-    let s = F('x', Rc::from(F('y', Rc::from(F('z', Rc::from(A(Rc::from(A(Rc::from(V('x')), Rc::from(V('z')))), Rc::from(A(Rc::from(V('y')), Rc::from(V('z')))))))))));
+    let k = LambdaExpression::parse("\\xy.x").unwrap();
+    let s = LambdaExpression::parse("\\xyz.x z (y z)").unwrap();
     
     println!("K combinator: {}", k);
     println!("S combinator: {}", s);
 
-    println!("Enter lambda expressions to parse (empty to stop):");
+    println!("Enter lambda expressions to parse and reduce (empty to stop):");
 
     let mut out: String;
     while {
@@ -182,7 +256,16 @@ fn main() {
         !out.is_empty()
     } {
         match LambdaExpression::parse(&out) {
-            Ok(expr) => println!("{expr}"),
+            Ok(mut expr) => {
+                println!("{expr}");
+                let mut b_reduced;
+                while {
+                    (expr, b_reduced) = expr.b_reduce(false);
+                    b_reduced
+                } {
+                    println!("{}", expr);
+                }
+            }
             Err(err) => println!("{}", err.to_str(2)), // 2 offset is from '> ' in input
         }
     }
