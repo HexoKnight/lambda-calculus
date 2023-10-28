@@ -169,13 +169,6 @@ impl LambdaExpression {
         Ok(previous_expr)
     }
 
-    // fn substitute(mut self: Box<Self>, mut replacements: HashMap<char, LambdaExpression>)
-    // -> (Box<Self>, HashMap<char, LambdaExpression>) {
-    //     match *self {
-            
-    //     }
-    // }
-
     fn b_reduce(self, recursive: bool) -> (Self, bool) {
         let (new_self, _, b_reduced) = Box::new(self).b_reduce_recursive(HashMap::new(), recursive, true, 0);
         (*new_self, b_reduced)
